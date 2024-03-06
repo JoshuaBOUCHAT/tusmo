@@ -1,20 +1,15 @@
 #[macro_use]
 extern crate lazy_static;
-type Sstr = &'static str;
 type Sstrs = Vec<&'static str>;
+use std::os::unix::raw::off_t;
+use std::thread::available_parallelism;
+use std::thread::spawn;
 
 #[derive(Debug)]
 enum State {
     Placed(char),
     Toplace(char),
     Bad(char),
-}
-impl State {
-    fn get_char(&self) -> char {
-        match self {
-            State::Placed(c) | State::Toplace(c) | State::Bad(c) => *c,
-        }
-    }
 }
 use std::{io::Write, usize};
 
@@ -35,17 +30,31 @@ fn main() {
         .into_iter()
         .filter(|i| (i.chars().nth(0).expect("error") == c))
         .collect();
+    let mut words_vec: Vec<Vec<char>> = Vec::with_capacity(words.len());
+    let mut words_ref: Vec<&Vec<char>> = Vec::with_capacity(words.len());
+    for word in &words {
+        words_vec.push(word.chars().collect());
+    }
+    let words_vec = words_vec;
+    for word in &words_vec {
+        words_ref.push(&word);
+    }
+
     loop {
-        /*for word in &words {
-            println!("{}", word);
-        }*/
-        println!("The try to word: {}", get_guess(&words));
+        for word in &words_ref {
+            for letter in *word {
+                print!("{letter}");
+            }
+            println!();
+        }
+        println!("The try to word: {:?}", get_guess_threaded(&words_ref));
 
         let guess = input("the word you try:\n").to_ascii_uppercase();
         let pattern = input("the pattern you got:\n").to_ascii_uppercase();
         let states = transform(&guess, &pattern);
+
         println!("{:?}", &states);
-        words = apply(words, states);
+        apply2(&mut words_ref, states);
     }
     /*let guess = input("guess").to_ascii_uppercase();
     let word = input("word").to_ascii_uppercase();
@@ -86,11 +95,9 @@ fn transform(guess: &str, pattern: &str) -> Vec<State> {
     }
     vec
 }
-fn guess_to_patten(word: &str, guess: &str) -> Vec<State> {
+fn guess_to_patten(word: &Vec<char>, guess: &Vec<char>) -> Vec<State> {
     let mut arr = [0u8; 26];
     let len = guess.len();
-    let word: Vec<_> = word.chars().collect();
-    let guess: Vec<_> = guess.chars().collect();
     let mut vec = Vec::with_capacity(len);
     //println!("{:?} {:?}", &word, &guess);
     for i in 0..len {
@@ -126,14 +133,6 @@ fn apply(mut words: Sstrs, key: Vec<State>) -> Sstrs {
                     .collect();
             }
             Toplace(c) => {
-                /*let count = key
-                .iter()
-                .filter(|i| match i {
-                    Bad(_) => false,
-                    Placed(k) => *k == c,
-                    Toplace(k) => *k == c,
-                })
-                .count();*/
                 words = words
                     .into_iter()
                     .filter(|j| j.chars().nth(i).expect("truc") != c)
@@ -170,15 +169,16 @@ fn input(msg: &str) -> String {
     std::io::stdin().read_line(&mut ret).expect("can't read");
     ret
 }
-fn get_guess(words: &Sstrs) -> Sstr {
+fn get_guess<'a>(words: &Vec<&'a Vec<char>>) -> (&'a Vec<char>, usize) {
     let mut min = usize::MAX;
-    let mut min_word = "NO WORD AVAILABLE";
+    let mut min_word = &words[0];
     let mut i = 0;
 
     for guess in words {
         let mut sum = 0;
         for word in words {
-            let words2 = apply(words.clone(), guess_to_patten(word, guess));
+            let mut words2 = words.clone();
+            apply2(&mut words2, guess_to_patten(word, guess));
             sum += words2.len();
         }
         println!("i:{i} sum:{sum}");
@@ -189,59 +189,43 @@ fn get_guess(words: &Sstrs) -> Sstr {
         }
         i += 1;
     }
-    min_word
+    (min_word, min)
 }
-fn apply2(mut words: Vec<&Vec<char>>, key: Vec<State>) -> usize {
-    let len = key.len();
+fn get_guess_threaded<'a, 'b>(words: &'b Vec<&'a Vec<char>>) -> Vec<char> {
+    let nb_cpu: usize = available_parallelism().expect("can't get cpu").into();
+    let chunks: Vec<_> = words.chunks(words.len() / nb_cpu).collect();
+}
+fn filter_vec<T>(words: &mut Vec<&Vec<char>>, closur: T)
+where
+    T: Fn(&Vec<char>) -> bool,
+{
+    let mut real_len = words.len();
+    let mut i = 0;
+    while i < real_len {
+        if closur(words[i]) {
+            i += 1;
+        } else {
+            real_len -= 1;
+            words[i] = words[real_len];
+        }
+    }
+    words.truncate(real_len);
+}
 
-    for i in 0..len {
-        let mut vec: Vec<&Vec<char>> = Vec::with_capacity(words.len());
+fn apply2(words: &mut Vec<&Vec<char>>, key: Vec<State>) {
+    for i in 0..key.len() {
         match key[i] {
             Placed(c) => {
-                /*words = words
-                .into_iter()
-                .filter(|j| j.chars().nth(i).unwrap() == c)
-                .collect();*/
-                for j in 0..words.len() {
-                    if words[j][i] == c {
-                        vec.push(words[j]);
-                    }
-                }
-                words = vec;
+                let closur = move |v: &Vec<char>| -> bool { v[i] == c };
+                filter_vec(words, closur);
             }
             Toplace(c) => {
-                /*let count = key
-                .iter()
-                .filter(|i| match i {
-                    Bad(_) => false,
-                    Placed(k) => *k == c,
-                    Toplace(k) => *k == c,
-                })
-                .count();*/
-                /*words = words
-                .into_iter()
-                .filter(|j| j.chars().nth(i).expect("truc") != c)
-                //.filter(|j| j.chars().filter(|i| *i == c).count() == count)
-                .collect();*/
-                for j in 0..words.len() {
-                    if words[j][i] != c {
-                        vec.push(words[j]);
-                    }
-                }
-                words = vec;
+                let closur = move |v: &Vec<char>| -> bool { v[i] != c };
+                filter_vec(words, closur);
             }
             Bad(c) => {
-                /*.into_iter()
-                .filter(|j| j.chars().nth(i).unwrap() != c)
-                //.filter(|j|key.chars().filter(|k|*k==c)==0)
-                .collect();*/
-                for j in 0..words.len() {
-                    if words[j][i] != c {
-                        vec.push(words[j]);
-                    }
-                }
-                words = vec;
-                vec = Vec::with_capacity(words.len());
+                let closur = move |v: &Vec<char>| -> bool { v[i] != c };
+                filter_vec(words, closur);
 
                 let count = key
                     .iter()
@@ -251,25 +235,17 @@ fn apply2(mut words: Vec<&Vec<char>>, key: Vec<State>) -> usize {
                         Bad(_) => false,
                     })
                     .count();
-                /* words = words
-                .into_iter()
-                .filter(|i| i.chars().filter(|k| *k == c).count() == count)
-                .collect();*/
-
-                for j in 0..words.len() {
-                    let mut k = 0;
-                    for l in 0..len {
-                        if words[j][l] == c {
-                            k += 1;
+                let closur = move |v: &Vec<char>| -> bool {
+                    let mut chars = 0;
+                    for ch in v {
+                        if *ch == c {
+                            chars += 1;
                         }
                     }
-                    if k == count {
-                        vec.push(words[j]);
-                    }
-                }
-                words = vec;
+                    chars == count
+                };
+                filter_vec(words, closur);
             }
         }
     }
-    words.len()
 }
