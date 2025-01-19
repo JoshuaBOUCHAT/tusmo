@@ -1,7 +1,7 @@
 pub const FIRST_WORD_AWNSER: [[&str; 26]; 5] = [
     [
         "aitres", "baiser", "caries", "desira", "etires", "furies", "garnie", "haires", "inouie",
-        "juntes", "kinase", "liures", "maries", "noires", "orties", "paries", "quetas", "retais",
+        "juntes", "kinase", "liures", "maries", "noires", "orties", "paries", "quetas", "renais",
         "saurie", "taries", "usante", "varies", "waters", "xenope", "yourte", "zonais",
     ],
     [
@@ -63,7 +63,7 @@ pub const FIRST_WORD_AWNSER: [[&str; 26]; 5] = [
         "partirions",
         "quantiemes",
         "repaitrons",
-        "surtoilees",
+        "sauterions",
         "triturions",
         "uraninites",
         "virulentes",

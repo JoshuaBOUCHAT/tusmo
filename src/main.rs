@@ -25,16 +25,58 @@ use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use State::*;
 
 fn main() {
-    let wordss = get_wordss();
+    let env: Vec<String> = std::env::args().collect();
+    if env.len() == 1 {
+        run();
+        return;
+    }
 
+    //println!("The computed word: {}", compute_for_five());
+    if env.len() != 3 {
+        eprintln!("wron number of arg, usage ./tusmo <n> <c>\n");
+        return;
+    }
+    let w_size: usize = env[1].trim().parse().expect("can't parse the number");
+    let first_char: char = env[2].trim().chars().nth(0).expect("can't get first char");
+    let words: Words = FILE
+        .split('\n')
+        .filter_map(|s| {
+            if s.len() == w_size && s.chars().nth(0).unwrap() == first_char {
+                Some(s.as_bytes())
+            } else {
+                None
+            }
+        })
+        .collect();
+    println!(
+        "The estimate word is: {}\n",
+        from_utf8(rayon_estiamte(&words)).unwrap()
+    )
+}
+
+fn run() {
     //pre_calculate();
-    let w_size: usize = input("size of the word").expect("wrong size pass");
+    let w_size: usize = input("size of the word", false).expect("wrong size pass");
 
-    let mut words: Words = wordss[w_size - 6].clone();
-    let first_char: char = input("first char of the word").expect("not good");
-    words.retain(|&i| i[0] == first_char as u8);
-    let precalculate_word =
-        precalculate::FIRST_WORD_AWNSER[w_size - 6][(first_char as u8 - 97) as usize];
+    let mut words: Words = FILE
+        .split('\n')
+        .filter_map(|s| {
+            if s.len() == w_size {
+                Some(s.as_bytes())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let precalculate_word = if w_size != 5 {
+        let first_char: char = input("first char of the word", false).expect("not good");
+        words.retain(|&i| i[0] == first_char as u8);
+        precalculate::FIRST_WORD_AWNSER[w_size - 6][(first_char as u8 - 97) as usize]
+    } else {
+        "raies"
+    };
+
     println!("The first word to try: {}", precalculate_word);
     let mut min_word = precalculate_word.as_bytes();
     println!(
@@ -43,8 +85,8 @@ fn main() {
     );
     while words.len() > 1 {
         println!("\nIl y a {} mots dans la liste", words.len());
-        let pattern_s: String = input("The pattern:").expect("wrong pattern provided");
-        let min_word_s: String = input("The word try").expect("wrong pattern provided");
+        let pattern_s: String = input("The pattern:", false).expect("wrong pattern provided");
+        let min_word_s: String = input("The word try", true).expect("wrong pattern provided");
         if !min_word_s.is_empty() {
             min_word = min_word_s.as_bytes();
         }
@@ -72,6 +114,15 @@ fn main() {
         println!("");
     }
 }
+
+fn compute_for_five() -> String {
+    let mut vec: Vec<&'static str> = FILE.split('\n').collect();
+    vec = vec.into_iter().filter(|&i| i.len() == 5).collect();
+    let words: Vec<_> = vec.into_iter().map(|s| s.as_bytes()).collect();
+    let res = rayon_estiamte(&words);
+    String::from(std::str::from_utf8(res).unwrap())
+}
+
 fn _pre_calculate() {
     let mut file = std::fs::File::create("computation.txt").expect("truc");
     write!(&mut file, "[").expect("can't write");
@@ -176,7 +227,7 @@ fn guess_to_pattern(word: &str, pattern: &str) -> Result<Vec<(u8, State)>, &'sta
         .collect();
     Ok(ret)
 }
-fn input<T: FromStr>(msg: &str) -> Result<T, T::Err> {
+fn input<T: FromStr>(msg: &str, nullable: bool) -> Result<T, T::Err> {
     loop {
         println!("{}", msg);
         let mut buffer = String::new();
@@ -187,7 +238,7 @@ fn input<T: FromStr>(msg: &str) -> Result<T, T::Err> {
         // Remove only the newline character
         let trimmed = buffer.trim_end_matches('\n');
 
-        if !trimmed.is_empty() {
+        if !trimmed.is_empty() || nullable {
             return trimmed.parse::<T>();
         } else {
             println!("Empty input is not allowed. Please try again.");
@@ -226,6 +277,7 @@ fn rayon_estiamte(words: &Words) -> Word {
     let count_chunck: AtomicU8 = AtomicU8::new(0);
     let chunk_size = words.len() / 100;
     let chunk_size = if chunk_size == 0 { 1 } else { chunk_size };
+    let verbose = words.len() > 500;
     words.par_chunks(chunk_size).for_each(|chunck| {
         'loo: for &guess in chunck {
             let mut count = 0;
@@ -248,7 +300,9 @@ fn rayon_estiamte(words: &Words) -> Word {
             }
         }
         count_chunck.fetch_add(1, Acquire);
-        println!("{}%", count_chunck.load(Relaxed));
+        if verbose {
+            println!("{}%", count_chunck.load(Relaxed));
+        }
     });
     let str = *min_word.lock().unwrap();
     str
