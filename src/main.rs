@@ -8,6 +8,7 @@ enum State {
 }
 use std::{
     char,
+    collections::HashSet,
     str::{from_utf8, FromStr},
     sync::{
         atomic::{AtomicU8, AtomicUsize},
@@ -41,7 +42,7 @@ fn main() {
     let words: Words = FILE
         .split('\n')
         .filter_map(|s| {
-            if s.len() == w_size && s.chars().nth(0).unwrap() == first_char {
+            if s.len() == w_size && (w_size == 5 || s.chars().nth(0).unwrap() == first_char) {
                 Some(s.as_bytes())
             } else {
                 None
@@ -50,7 +51,7 @@ fn main() {
         .collect();
     println!(
         "The estimate word is: {}\n",
-        from_utf8(rayon_estiamte(&words)).unwrap()
+        from_utf8(rayon_estiamte(&words, &words)).unwrap()
     )
 }
 
@@ -58,7 +59,7 @@ fn run() {
     //pre_calculate();
     let w_size: usize = input("size of the word", false).expect("wrong size pass");
 
-    let mut words: Words = FILE
+    let mut all_words: Words = FILE
         .split('\n')
         .filter_map(|s| {
             if s.len() == w_size {
@@ -69,9 +70,12 @@ fn run() {
         })
         .collect();
 
+    let mut words = all_words.clone();
+
     let precalculate_word = if w_size != 5 {
         let first_char: char = input("first char of the word", false).expect("not good");
         words.retain(|&i| i[0] == first_char as u8);
+        all_words.retain(|&i| i[0] == first_char as u8);
         precalculate::FIRST_WORD_AWNSER[w_size - 6][(first_char as u8 - 97) as usize]
     } else {
         "raies"
@@ -100,8 +104,8 @@ fn run() {
             words.len()
         );
         //print_words(&words);
-
-        min_word = rayon_estiamte(&words);
+        println!("Computing {} words by {} ", words.len(), all_words.len());
+        min_word = rayon_estiamte(&words, &all_words);
         println!(
             "Here is better word to try: {}",
             from_utf8(min_word).expect("tructruc")
@@ -115,24 +119,24 @@ fn run() {
     }
 }
 
-fn compute_for_five() -> String {
+fn _compute_for_five() -> String {
     let mut vec: Vec<&'static str> = FILE.split('\n').collect();
     vec = vec.into_iter().filter(|&i| i.len() == 5).collect();
     let words: Vec<_> = vec.into_iter().map(|s| s.as_bytes()).collect();
-    let res = rayon_estiamte(&words);
+    let res = rayon_estiamte(&words, &words);
     String::from(std::str::from_utf8(res).unwrap())
 }
 
 fn _pre_calculate() {
     let mut file = std::fs::File::create("computation.txt").expect("truc");
     write!(&mut file, "[").expect("can't write");
-    let wordss = get_wordss();
+    let wordss = _get_wordss();
     let mut map: [[&str; 26]; 5] = [[""; 26]; 5];
     for i in 6..=10 {
         for c in 97u8..=122 {
             let mut words = wordss[i - 6].clone();
             words.retain(|&t| t[0] == c);
-            let slice = rayon_estiamte(&words);
+            let slice = rayon_estiamte(&words, &words);
             map[i - 6][(c - 97) as usize] = from_utf8(slice).unwrap();
             println!("computed {i},{}", c as char);
             write!(&mut file, "\"{}\",", from_utf8(slice).unwrap())
@@ -193,7 +197,7 @@ fn count_char(word: Word, c: u8) -> i32 {
     count
 }
 
-fn get_wordss() -> Vec<Vec<&'static [u8]>> {
+fn _get_wordss() -> Vec<Vec<&'static [u8]>> {
     let mut vec: Vec<&'static str> = FILE.split('\n').collect();
     vec = vec
         .into_iter()
@@ -220,8 +224,8 @@ fn guess_to_pattern(word: &str, pattern: &str) -> Result<Vec<(u8, State)>, &'sta
         .zip(pattern)
         .map(|a| match *a.1 {
             //_ for ToPlaced and - for already well placed
-            95 => (*a.0, ToPlaced),
-            45 => (*a.0, Placed),
+            b'_' => (*a.0, ToPlaced),
+            b'-' => (*a.0, Placed),
             _ => (*a.0, Wrong),
         })
         .collect();
@@ -270,15 +274,16 @@ fn get_pattern(guess: Word, awnser: Word) -> Pattern {
 
     ret
 }
-fn rayon_estiamte(words: &Words) -> Word {
+fn rayon_estiamte(words: &Words, all_words: &Words) -> Word {
     let min: AtomicUsize = AtomicUsize::new(usize::MAX);
     min.load(std::sync::atomic::Ordering::Relaxed);
-    let min_word = Arc::new(Mutex::new(words[0]));
+    let min_word = Arc::new(Mutex::new(all_words[0]));
     let count_chunck: AtomicU8 = AtomicU8::new(0);
-    let chunk_size = words.len() / 100;
+    let chunk_size = all_words.len() / 100;
     let chunk_size = if chunk_size == 0 { 1 } else { chunk_size };
     let verbose = words.len() > 500;
-    words.par_chunks(chunk_size).for_each(|chunck| {
+    let set: HashSet<&[u8]> = std::collections::HashSet::from_iter(words.iter().map(|&s| s));
+    all_words.par_chunks(chunk_size).for_each(|chunck| {
         'loo: for &guess in chunck {
             let mut count = 0;
             for &test in words {
@@ -295,7 +300,7 @@ fn rayon_estiamte(words: &Words) -> Word {
                     "the min is: {} for word: {} so it's about {} possible for the next try",
                     count,
                     from_utf8(*lock).unwrap(),
-                    count as f64 / words.len() as f64
+                    count as f64 / all_words.len() as f64
                 );
             }
         }
