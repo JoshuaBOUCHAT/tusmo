@@ -243,12 +243,17 @@ fn guess_to_pattern(word: &str, pattern: &str) -> Result<Vec<(u8, State)>, &'sta
     Ok(ret)
 }
 fn input<T: FromStr>(msg: &str, nullable: bool) -> T {
+    let mut error = 0;
     loop {
         println!("{}", msg);
         let mut buffer = String::new();
-        std::io::stdin()
-            .read_line(&mut buffer)
-            .expect("cant read through buffer");
+        if std::io::stdin().read_line(&mut buffer).is_err() {
+            if error == 3 {
+                panic!("multiple error while reading")
+            }
+            error += 1;
+            continue;
+        }
 
         // Remove only the newline character
         let trimmed = buffer.trim_end_matches('\n');
