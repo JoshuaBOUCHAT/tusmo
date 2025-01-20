@@ -8,7 +8,7 @@ enum State {
 }
 use std::{
     char,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     str::{from_utf8, FromStr},
     sync::{
         atomic::{AtomicU8, AtomicUsize},
