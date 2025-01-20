@@ -18,7 +18,7 @@ pub const FIRST_WORD_AWNSER: [[&str; 26]; 5] = [
     ],
     [
         "autorisee",
-        "barulions",
+        "brulantes",
         "coltinees",
         "decintras",
         "entamures",

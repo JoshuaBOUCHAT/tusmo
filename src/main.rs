@@ -8,7 +8,7 @@ enum State {
 }
 use std::{
     char,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     str::{from_utf8, FromStr},
     sync::{
         atomic::{AtomicU8, AtomicUsize},
@@ -57,7 +57,7 @@ fn main() {
 
 fn run() {
     //pre_calculate();
-    let w_size: usize = input("size of the word", false).expect("wrong size pass");
+    let w_size: usize = input("size of the word", false);
 
     let mut all_words: Words = FILE
         .split('\n')
@@ -73,7 +73,7 @@ fn run() {
     let mut words = all_words.clone();
 
     let precalculate_word = if w_size != 5 {
-        let first_char: char = input("first char of the word", false).expect("not good");
+        let first_char: char = input("first char of the word", false);
         words.retain(|&i| i[0] == first_char as u8);
         all_words.retain(|&i| i[0] == first_char as u8);
         precalculate::FIRST_WORD_AWNSER[w_size - 6][(first_char as u8 - 97) as usize]
@@ -89,8 +89,19 @@ fn run() {
     );
     while words.len() > 1 {
         println!("\nIl y a {} mots dans la liste", words.len());
-        let pattern_s: String = input("The pattern:", false).expect("wrong pattern provided");
-        let min_word_s: String = input("The word try", true).expect("wrong pattern provided");
+        let pattern_s: String = loop {
+            let tried: String = input("The pattern:", false);
+
+            if tried.len() == w_size {
+                break tried;
+            }
+        };
+        let min_word_s: String = loop {
+            let tried: String = input("The word try", true);
+            if tried.len() == 0 || tried.len() == w_size {
+                break tried;
+            }
+        };
         if !min_word_s.is_empty() {
             min_word = min_word_s.as_bytes();
         }
@@ -105,7 +116,7 @@ fn run() {
         );
         //print_words(&words);
         println!("Computing {} words by {} ", words.len(), all_words.len());
-        min_word = rayon_estiamte(&words, &all_words);
+        min_word = seq_estimate(&words, &all_words);
         println!(
             "Here is better word to try: {}",
             from_utf8(min_word).expect("tructruc")
@@ -231,7 +242,7 @@ fn guess_to_pattern(word: &str, pattern: &str) -> Result<Vec<(u8, State)>, &'sta
         .collect();
     Ok(ret)
 }
-fn input<T: FromStr>(msg: &str, nullable: bool) -> Result<T, T::Err> {
+fn input<T: FromStr>(msg: &str, nullable: bool) -> T {
     loop {
         println!("{}", msg);
         let mut buffer = String::new();
@@ -243,9 +254,14 @@ fn input<T: FromStr>(msg: &str, nullable: bool) -> Result<T, T::Err> {
         let trimmed = buffer.trim_end_matches('\n');
 
         if !trimmed.is_empty() || nullable {
-            return trimmed.parse::<T>();
-        } else {
-            println!("Empty input is not allowed. Please try again.");
+            if let Ok(res) = trimmed.parse::<T>() {
+                return res;
+            } else if trimmed.is_empty() && !nullable {
+                println!("Empty input is not allowed. Please try again.");
+            } else {
+                eprintln!("Invalide input retry!\n");
+            }
+            continue;
         }
     }
 }
@@ -282,7 +298,7 @@ fn rayon_estiamte(words: &Words, all_words: &Words) -> Word {
     let chunk_size = all_words.len() / 100;
     let chunk_size = if chunk_size == 0 { 1 } else { chunk_size };
     let verbose = words.len() > 500;
-    let set: HashSet<&[u8]> = std::collections::HashSet::from_iter(words.iter().map(|&s| s));
+    //let set: HashSet<&[u8]> = std::collections::HashSet::from_iter(words.iter().map(|&s| s));
     all_words.par_chunks(chunk_size).for_each(|chunck| {
         'loo: for &guess in chunck {
             let mut count = 0;
@@ -311,4 +327,33 @@ fn rayon_estiamte(words: &Words, all_words: &Words) -> Word {
     });
     let str = *min_word.lock().unwrap();
     str
+}
+fn seq_estimate(words: &Words, all_words: &Words) -> Word {
+    let mut min = usize::MAX;
+    let mut min_word: Word = b"".as_slice();
+    let map: HashMap<Word, usize> = words.iter().enumerate().map(|(a, &b)| (b, a)).collect();
+    all_words.iter().for_each(|&test: &Word| {
+        let mut copy: Words = words.clone();
+        if let Some(&idx) = map.get(test) {
+            copy.swap_remove(idx);
+        }
+        let mut count = 0;
+        for &awnser in words {
+            let pattern = get_pattern(test, awnser);
+            count += filter_with_pattern(copy.clone(), &pattern).len();
+            if count > min {
+                continue;
+            }
+        }
+        if count < min {
+            min = count;
+            min_word = test;
+            println!(
+                "The new word calculated is: {} his score:{}",
+                from_utf8(min_word).unwrap(),
+                count as f32 / words.len() as f32
+            );
+        }
+    });
+    min_word
 }
